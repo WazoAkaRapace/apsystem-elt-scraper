@@ -1,0 +1,101 @@
+import express from 'express';
+import dotenv from 'dotenv';
+import { chromium } from '@playwright/test';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.SCRAPER_PORT || 8080;
+
+let lastResult = null;
+let lastUpdated = null;
+
+async function scrapeAPS() {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+  });
+  const page = await context.newPage();
+
+  try {
+    await page.goto(process.env.APS_LOGIN_URL, { waitUntil: 'domcontentloaded' });
+
+    // Wait for the dashboard to actually render
+    await page.waitForSelector('text=DASHBOARD', { timeout: 30000 });
+
+    // First call: get summary (contains storageSign with the storageId)
+    const summary = await page.evaluate(async () => {
+      const res = await fetch('/ema/ajax/getDashboardApiAjax/getStorageSummaryProductionInfoAjax', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: 'isMultipleStorage=false',
+      });
+      return res.json();
+    });
+
+    // Extract storageId from storageSign (format: "0/B05000001612YYYYYYYY")
+    const storageId = summary.storageSign?.split('/')[1]?.replace(/Y+$/, '') || null;
+
+    // Second call: get current power time series
+    const powerData = storageId ? await page.evaluate(async (sid) => {
+      const res = await fetch('/ema/ajax/getDashboardApiAjax/getStoragePowerOnCurrentDayAjax', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: `date=${new Date().toISOString().slice(0,10).replace(/-/g,'')}&storageId=${sid}`,
+      });
+      return res.json();
+    }, storageId) : null;
+
+    const last = (arr) => arr ? parseInt(arr[arr.length - 1]) : null;
+
+    await browser.close();
+
+    return {
+      soc_percent: parseInt(summary.SSOC),
+      charged_kwh: parseFloat(summary.DE1),
+      discharged_kwh: parseFloat(summary.DE0),
+      charge_power_w: last(powerData?.chargePower),
+      discharge_power_w: last(powerData?.dischargePower),
+    };
+  } catch (err) {
+    await browser.close();
+    throw err;
+  }
+}
+
+app.get('/status', async (req, res) => {
+  try {
+    const maxAgeMs = 10 * 60 * 1000;
+    if (!lastResult || !lastUpdated || Date.now() - lastUpdated > maxAgeMs) {
+      lastResult = await scrapeAPS();
+      lastUpdated = Date.now();
+    }
+
+    res.json({
+      ...lastResult,
+      updated_at: new Date(lastUpdated).toISOString(),
+    });
+  } catch (err) {
+    console.error('Scrape failed:', err.message);
+
+    if (lastResult) {
+      res.json({
+        ...lastResult,
+        updated_at: new Date(lastUpdated).toISOString(),
+        stale: true,
+      });
+    } else {
+      res.status(500).json({ error: 'Scrape failed and no cached data available' });
+    }
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`APS scraper listening on port ${PORT}`);
+});

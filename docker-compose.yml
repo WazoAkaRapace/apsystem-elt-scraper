@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  scraper:
+    build: .
+    container_name: playwright-scraper
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    # Playwright Docker best practices [web:23][web:42]
+    init: true
+    ipc: host
+    # Optional persistent profile for faster login if you implement launchPersistentContext
+    # volumes:
+    #   - ./data:/data
+    restart: unless-stopped

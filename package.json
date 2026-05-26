@@ -1,0 +1,14 @@
+{
+  "name": "playwright-scraper",
+  "version": "1.0.0",
+  "main": "scraper.js",
+  "type": "module",
+  "scripts": {
+    "start": "node scraper.js"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.60.0",
+    "express": "^4.19.0",
+    "dotenv": "^16.4.0"
+  }
+}
