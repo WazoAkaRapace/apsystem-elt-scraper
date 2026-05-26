@@ -7,9 +7,6 @@ dotenv.config();
 const app = express();
 const PORT = process.env.SCRAPER_PORT || 8080;
 
-let lastResult = null;
-let lastUpdated = null;
-
 async function scrapeAPS() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -71,28 +68,11 @@ async function scrapeAPS() {
 
 app.get('/status', async (req, res) => {
   try {
-    const maxAgeMs = 10 * 60 * 1000;
-    if (!lastResult || !lastUpdated || Date.now() - lastUpdated > maxAgeMs) {
-      lastResult = await scrapeAPS();
-      lastUpdated = Date.now();
-    }
-
-    res.json({
-      ...lastResult,
-      updated_at: new Date(lastUpdated).toISOString(),
-    });
+    const result = await scrapeAPS();
+    res.json({ ...result, updated_at: new Date().toISOString() });
   } catch (err) {
     console.error('Scrape failed:', err.message);
-
-    if (lastResult) {
-      res.json({
-        ...lastResult,
-        updated_at: new Date(lastUpdated).toISOString(),
-        stale: true,
-      });
-    } else {
-      res.status(500).json({ error: 'Scrape failed and no cached data available' });
-    }
+    res.status(500).json({ error: 'Scrape failed: ' + err.message });
   }
 });
 
