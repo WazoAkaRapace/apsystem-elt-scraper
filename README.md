@@ -41,22 +41,51 @@ docker compose up -d
 curl http://localhost:8080/status
 ```
 
-## Home Assistant REST Sensor
+## Home Assistant Setup
+
+One REST call fetches all values, then template sensors expose each as its own entity. Add to your `configuration.yaml`:
 
 ```yaml
-sensor:
-  - platform: rest
-    name: APS Battery
-    resource: http://<host>:8080/status
-    json_attributes:
-      - soc_percent
-      - charged_kwh
-      - discharged_kwh
-      - charge_power_w
-      - discharge_power_w
-    value_template: "{{ value_json.soc_percent }}"
-    unit_of_measurement: "%"
+rest:
+  - resource: http://<host>:8080/status
+    scan_interval: 600
+    sensor:
+      - name: APS Battery SOC
+        value_template: "{{ value_json.soc_percent }}"
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+      - name: APS Battery Charged
+        value_template: "{{ value_json.charged_kwh }}"
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+      - name: APS Battery Discharged
+        value_template: "{{ value_json.discharged_kwh }}"
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+      - name: APS Battery Charge Power
+        value_template: "{{ value_json.charge_power_w }}"
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+      - name: APS Battery Discharge Power
+        value_template: "{{ value_json.discharge_power_w }}"
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
 ```
+
+This makes a single HTTP call every 10 minutes and creates 5 separate entities:
+
+| Entity | Unit | Description |
+|--------|------|-------------|
+| `sensor.aps_battery_soc` | % | Battery state of charge |
+| `sensor.aps_battery_charged` | kWh | Today's total energy charged |
+| `sensor.aps_battery_discharged` | kWh | Today's total energy discharged |
+| `sensor.aps_battery_charge_power` | W | Current charge power |
+| `sensor.aps_battery_discharge_power` | W | Current discharge power |
 
 ## Docker Image
 
