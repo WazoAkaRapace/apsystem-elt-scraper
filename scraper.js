@@ -7,6 +7,10 @@ dotenv.config();
 const app = express();
 const PORT = process.env.SCRAPER_PORT || 8080;
 
+let healthy = true;
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 async function scrapeAPS() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -52,6 +56,7 @@ async function scrapeAPS() {
     const last = (arr) => arr ? parseInt(arr[arr.length - 1]) : null;
 
     await browser.close();
+    healthy = true;
 
     return {
       soc_percent: parseInt(summary.SSOC),
@@ -67,13 +72,27 @@ async function scrapeAPS() {
 }
 
 app.get('/status', async (req, res) => {
-  try {
-    const result = await scrapeAPS();
-    res.json({ ...result, updated_at: new Date().toISOString() });
-  } catch (err) {
-    console.error('Scrape failed:', err.message);
-    res.status(500).json({ error: 'Scrape failed: ' + err.message });
+  const maxAttempts = 3;
+  let lastErr;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await scrapeAPS();
+      return res.json({ ...result, updated_at: new Date().toISOString() });
+    } catch (err) {
+      lastErr = err;
+      console.error(`Scrape attempt ${attempt}/${maxAttempts} failed:`, err.message);
+      if (attempt < maxAttempts) await sleep(attempt * 5000);
+    }
   }
+
+  healthy = false;
+  res.status(500).json({ error: 'Scrape failed: ' + lastErr.message });
+});
+
+app.get('/health', (_req, res) => {
+  if (healthy) return res.status(200).send('ok');
+  res.status(503).send('unhealthy');
 });
 
 app.listen(PORT, () => {
