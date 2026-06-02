@@ -1,0 +1,32 @@
+vmType: vz
+os: Linux
+arch: aarch64
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: aarch64
+cpus: 4
+memory: 8GiB
+disk: 30GiB
+mounts:
+  - location: "/Users/mika/test-scrape-aps"
+    writable: true
+containerd:
+  system: false
+  user: false
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eu -o pipefail
+      apt-get update
+      apt-get install -y adb android-sdk-platform-tools
+      # Install Docker
+      curl -fsSL https://get.docker.com | sh
+      usermod -aG docker lima
+portForwards:
+  - guestPort: 5555
+    hostPort: 5555
+  - guestPort: 8080
+    hostPort: 8080
+  - guestPort: 8081
+    hostPort: 8081
